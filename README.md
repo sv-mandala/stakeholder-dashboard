@@ -64,9 +64,10 @@ Any Python host works too (Render, Azure App Service, an internal server): insta
 
 ## 4. Branding
 
-Colours are taken from mandalapartners.com/reports (deep navy `#001C55` + coral
-`#DA5C5C`, extended with in-family tints). To adjust, edit `MANDALA_PALETTE` and
-`FIXED_GROUP_COLOURS` near the top of [`app.py`](app.py), and the theme in
+Bubbles use the Mandala theme palette — blues, teals and green only (deep navy
+`#0A2A5E`, royal blue `#2A47A8`, teal `#2E6E8E`, azure `#2E86C1`, green `#2E8B67`,
+slate blue `#5A7196`). To adjust, edit `MANDALA_PALETTE` and `FIXED_GROUP_COLOURS`
+near the top of [`app.py`](app.py), and the theme in
 [`.streamlit/config.toml`](.streamlit/config.toml).
 
 ---
