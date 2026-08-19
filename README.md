@@ -5,9 +5,12 @@ on a central research topic as a **hub-and-spoke bubble diagram**, in Mandala br
 
 - One bubble per **stakeholder group** (Academia, Public, Media, Government, Unions,
   Business and peak bodies, …), arranged around the central research topic.
+- Each major **argument** in the topic has its own colour, and each bubble is
+  **coloured by the argument that the most commentators in that group align with**
+  (its dominant theme). A legend maps colours to arguments.
 - **Bubble size = amount of dialogue** — the number of commentaries from that group.
-- **Click a bubble** to read what that group is saying: the quote, who said it, and a
-  link to the source.
+- **Click a bubble** to open a **table of every commentator, grouped by the argument
+  their comment aligns with**, with the quote, sentiment, date and a link to the source.
 - **Upload** the data Bec compiles (CSV or Excel) to refresh the whole dashboard.
 
 ---
@@ -20,11 +23,16 @@ The dashboard reads one row per commentary. Save it as **CSV or Excel** with the
 |---------------------|----------|--------------------------------------------------------------------|
 | `topic`             | optional | The central research topic. Multiple topics → a topic dropdown.    |
 | `stakeholder_group` | **yes**  | The bubble this belongs to, e.g. `Government`, `Media`, `Academia`. |
-| `stakeholder_name`  | optional | Who said it (person or organisation).                              |
+| `stakeholder_name`  | optional | The commentator — who said it (person or organisation).           |
+| `argument`          | **key**  | The argument/theme this comment aligns with, e.g. `Lower direct election cost`. Drives the bubble colour and the grouped tables. Blank rows are grouped under `Unclassified`. |
 | `quote`             | **yes**  | The commentary / quote text.                                      |
-| `source_link`       | optional | URL to the source (rendered as a clickable “↗ Source”).           |
+| `source_link`       | optional | URL to the source (rendered as a clickable “↗ open” link).        |
 | `date`              | optional | Date of the commentary (any readable format).                     |
-| `sentiment`         | optional | `positive`, `neutral`, or `negative` → coloured badge.            |
+| `sentiment`         | optional | `positive`, `neutral`, or `negative`.                             |
+
+> **Tip:** keep `argument` values consistent (same spelling every time) so comments
+> group cleanly and colours stay stable. Each distinct argument gets its own colour,
+> assigned in alphabetical order from the Mandala palette.
 
 A ready-to-fill template lives at [`data/sample_data.csv`](data/sample_data.csv), and can
 also be downloaded from inside the app (sidebar → **Download data template**).

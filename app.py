@@ -2,13 +2,15 @@
 Mandala Stakeholder Dialogue Dashboard
 --------------------------------------
 An interactive Streamlit dashboard that visualises stakeholder commentary on a
-central research topic as a bubble / network diagram.
+central research topic as a bubble / network diagram, coloured by argument.
 
   * Upload the data compiled by Bec (CSV or Excel).
-  * Bubbles are one per stakeholder group, arranged around the central topic.
+  * Each major ARGUMENT in the topic has its own colour.
+  * Each stakeholder-group bubble is coloured by the argument the MOST
+    commentators in that group align with (its dominant theme).
   * Bubble size = the amount of dialogue (number of commentaries) from that group.
-  * Click a bubble to read what that group is saying: the quote, who said it,
-    and a link to the source.
+  * Click a bubble to see every commentator in a table, grouped by the argument
+    their comment aligns with, with the quote and a link to the source.
 
 Run locally:   streamlit run app.py
 Data schema:   see data/sample_data.csv and README.md
@@ -26,39 +28,30 @@ import streamlit as st
 # --------------------------------------------------------------------------- #
 # Mandala branding
 # --------------------------------------------------------------------------- #
-# Palette extracted from mandalapartners.com/reports (navy + coral house style),
-# extended with in-family tints/complements so up to ~8 groups stay distinct.
+# Blues / teals / greens only (from the Mandala theme swatches). No coral, no gold.
 NAVY = "#0A2A5E"          # deep navy (spokes + central ring)
 NAVY_INK = "#0A1F45"      # near-black navy (text)
 TEAL = "#2E6E8E"          # teal accent (source links)
-AZURE = "#2E86C1"         # bright azure blue
 GREEN = "#2E8B67"         # green accent
 STEEL = "#33567A"         # deep steel blue
 GREY = "#5F5F5F"          # body grey
 LIGHT = "#EDEFF3"         # light background
 
-# Ordered categorical palette for stakeholder bubbles (from Mandala theme swatches).
-# Blues, teals and greens only.
-MANDALA_PALETTE = [
+# Palette used to colour ARGUMENTS (assigned in stable, sorted order).
+ARGUMENT_PALETTE = [
     "#0A2A5E",  # deep navy
-    "#2A47A8",  # royal blue
-    "#2E6E8E",  # teal
     "#2E86C1",  # azure blue
     "#2E8B67",  # green
+    "#2E6E8E",  # teal
+    "#2A47A8",  # royal blue
     "#5A7196",  # slate blue
-    "#7E93AD",  # muted slate
     "#35798F",  # deep teal
+    "#7E93AD",  # muted slate
+    "#1F9E89",  # emerald
+    "#264F73",  # steel navy
 ]
-
-# Stable colour per known group so the palette doesn't shuffle between loads.
-FIXED_GROUP_COLOURS = {
-    "Government": "#0A2A5E",                 # deep navy
-    "Academia": "#2A47A8",                   # royal blue
-    "Media": "#2E6E8E",                      # teal
-    "Business and peak bodies": "#2E86C1",   # azure blue
-    "Public": "#2E8B67",                     # green
-    "Unions": "#5A7196",                     # slate blue
-}
+UNCLASSIFIED = "Unclassified"
+UNCLASSIFIED_COLOUR = "#9AA6B2"  # neutral grey-blue for uncoded comments
 
 SENTIMENT_COLOURS = {
     "positive": GREEN,
@@ -67,7 +60,7 @@ SENTIMENT_COLOURS = {
 }
 
 REQUIRED_COLUMNS = ["stakeholder_group", "quote"]
-OPTIONAL_COLUMNS = ["topic", "stakeholder_name", "source_link", "date", "sentiment"]
+OPTIONAL_COLUMNS = ["topic", "stakeholder_name", "argument", "source_link", "date", "sentiment"]
 
 APP_DIR = Path(__file__).parent
 SAMPLE_PATH = APP_DIR / "data" / "sample_data.csv"
@@ -99,21 +92,22 @@ def normalise(df: pd.DataFrame) -> pd.DataFrame:
         if col not in df.columns:
             df[col] = ""
 
-    # Drop rows without a group or a quote.
     df["stakeholder_group"] = df["stakeholder_group"].astype(str).str.strip()
     df["quote"] = df["quote"].astype(str).str.strip()
     df = df[(df["stakeholder_group"] != "") & (df["stakeholder_group"].str.lower() != "nan")]
     df = df[(df["quote"] != "") & (df["quote"].str.lower() != "nan")]
 
-    for col in ["stakeholder_name", "source_link", "sentiment", "topic"]:
+    for col in ["stakeholder_name", "argument", "source_link", "sentiment", "topic"]:
         df[col] = df[col].astype(str).str.strip().replace({"nan": ""})
     df["sentiment"] = df["sentiment"].str.lower()
+
+    # Uncoded comments still appear, grouped under "Unclassified".
+    df["argument"] = df["argument"].replace({"": UNCLASSIFIED})
 
     return df.reset_index(drop=True)
 
 
 def validate(df: pd.DataFrame) -> list[str]:
-    """Return a list of problems; empty list means the data is usable."""
     problems = []
     for col in REQUIRED_COLUMNS:
         if col not in df.columns:
@@ -123,51 +117,61 @@ def validate(df: pd.DataFrame) -> list[str]:
     return problems
 
 
-def colour_for(group: str, index: int) -> str:
-    return FIXED_GROUP_COLOURS.get(group, MANDALA_PALETTE[index % len(MANDALA_PALETTE)])
+def argument_colours(arguments: list[str]) -> dict[str, str]:
+    """Assign a stable colour to each argument (sorted, so it never shuffles)."""
+    ordered = sorted(a for a in arguments if a != UNCLASSIFIED)
+    mapping = {a: ARGUMENT_PALETTE[i % len(ARGUMENT_PALETTE)] for i, a in enumerate(ordered)}
+    mapping[UNCLASSIFIED] = UNCLASSIFIED_COLOUR
+    return mapping
+
+
+def dominant_argument(group_df: pd.DataFrame) -> str:
+    """The argument with the most commentators in a group.
+
+    Ties break deterministically: higher count first, then alphabetical.
+    """
+    tally = group_df["argument"].value_counts()
+    # Sort by (-count, name) for a stable winner.
+    ordered = sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))
+    return ordered[0][0] if ordered else UNCLASSIFIED
 
 
 # --------------------------------------------------------------------------- #
 # Network / bubble figure
 # --------------------------------------------------------------------------- #
-def build_figure(counts: pd.DataFrame, topic_label: str) -> go.Figure:
+def build_figure(counts: pd.DataFrame, arg_colours: dict[str, str], topic_label: str) -> go.Figure:
     """
-    Build the hub-and-spoke bubble diagram.
+    Hub-and-spoke bubble diagram.
 
-    `counts` has columns: stakeholder_group, n (number of commentaries), colour.
-    Returns a Plotly figure; each group bubble carries its group name in
-    customdata so clicks can be mapped back to a group.
+    `counts` columns: stakeholder_group, n, dominant_arg, colour.
+    Bubble colour encodes the group's dominant argument; a legend maps
+    each colour to its argument. Group names carried in customdata for clicks.
     """
     n_groups = len(counts)
     radius = 1.0
-    # Marker area ~ number of commentaries -> diameter ~ sqrt(n).
     max_n = max(int(counts["n"].max()), 1)
-    min_px, max_px = 46, 130
+    min_px, max_px = 46, 132
 
     def size_px(n: int) -> float:
         return min_px + (max_px - min_px) * math.sqrt(n / max_n)
 
-    fig = go.Figure()
-
-    # Position groups evenly around the centre. Start at the top, go clockwise.
     positions = []
     for i in range(n_groups):
         angle = math.pi / 2 - (2 * math.pi * i / max(n_groups, 1))
         positions.append((radius * math.cos(angle), radius * math.sin(angle)))
 
-    # 1) Edges (spokes) from centre to each group.
+    fig = go.Figure()
+
+    # 1) Spokes from centre to each group.
     for (x, y) in positions:
         fig.add_trace(
             go.Scatter(
-                x=[0, x], y=[0, y],
-                mode="lines",
-                line=dict(color=NAVY, width=2),
-                hoverinfo="skip",
-                showlegend=False,
+                x=[0, x], y=[0, y], mode="lines",
+                line=dict(color=NAVY, width=2), hoverinfo="skip", showlegend=False,
             )
         )
 
-    # 2) Group bubbles (single trace so click index maps to the group list).
+    # 2) Group bubbles (single trace -> click index maps to group list).
     fig.add_trace(
         go.Scatter(
             x=[p[0] for p in positions],
@@ -177,7 +181,7 @@ def build_figure(counts: pd.DataFrame, topic_label: str) -> go.Figure:
                 size=[size_px(int(n)) for n in counts["n"]],
                 color=list(counts["colour"]),
                 line=dict(color="white", width=2),
-                opacity=0.92,
+                opacity=0.95,
             ),
             text=[f"<b>{g}</b><br>{int(n)}" for g, n in zip(counts["stakeholder_group"], counts["n"])],
             textposition="middle center",
@@ -188,65 +192,99 @@ def build_figure(counts: pd.DataFrame, topic_label: str) -> go.Figure:
         )
     )
 
-    # 3) Central topic node (white with navy ring, like the reference diagram).
+    # 3) Central topic node.
     fig.add_trace(
         go.Scatter(
-            x=[0], y=[0],
-            mode="markers+text",
+            x=[0], y=[0], mode="markers+text",
             marker=dict(size=150, color="white", line=dict(color=NAVY, width=3)),
-            text=[f"<b>{topic_label}</b>"],
-            textposition="middle center",
+            text=[f"<b>{topic_label}</b>"], textposition="middle center",
             textfont=dict(color=NAVY_INK, size=13, family="Arial"),
-            hoverinfo="skip",
-            showlegend=False,
+            hoverinfo="skip", showlegend=False,
         )
     )
 
+    # 4) Legend: one dummy trace per argument that actually colours a bubble.
+    shown_args = list(dict.fromkeys(counts["dominant_arg"]))  # preserve order, unique
+    for arg in shown_args:
+        fig.add_trace(
+            go.Scatter(
+                x=[None], y=[None], mode="markers",
+                marker=dict(size=13, color=arg_colours.get(arg, UNCLASSIFIED_COLOUR)),
+                name=arg, showlegend=True, hoverinfo="skip",
+            )
+        )
+
     fig.update_layout(
         xaxis=dict(visible=False, range=[-1.7, 1.7]),
-        yaxis=dict(visible=False, range=[-1.5, 1.5], scaleanchor="x", scaleratio=1),
-        margin=dict(l=10, r=10, t=10, b=10),
-        height=620,
+        yaxis=dict(visible=False, range=[-1.5, 1.6], scaleanchor="x", scaleratio=1),
+        margin=dict(l=10, r=10, t=48, b=10),
+        height=640,
         plot_bgcolor="white",
         paper_bgcolor="white",
         clickmode="event+select",
         dragmode=False,
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.0, xanchor="center", x=0.5,
+            title=dict(text="Dominant argument  ", side="left"),
+            font=dict(size=11, color=NAVY_INK),
+        ),
     )
     return fig
 
 
 # --------------------------------------------------------------------------- #
-# Detail panel
+# Detail panel: table of commentators grouped by argument
 # --------------------------------------------------------------------------- #
-def render_group_detail(df: pd.DataFrame, group: str) -> None:
+def render_group_detail(df: pd.DataFrame, group: str, arg_colours: dict[str, str]) -> None:
     rows = df[df["stakeholder_group"] == group]
-    st.markdown(f"### 💬 What **{group}** are saying  ·  {len(rows)} commentaries")
+    dom = dominant_argument(rows)
 
-    for _, r in rows.iterrows():
-        speaker = r.get("stakeholder_name", "") or "Unattributed"
-        sentiment = (r.get("sentiment", "") or "").lower()
-        badge = ""
-        if sentiment in SENTIMENT_COLOURS:
-            colour = SENTIMENT_COLOURS[sentiment]
-            badge = (
-                f"<span style='background:{colour};color:white;padding:2px 8px;"
-                f"border-radius:10px;font-size:11px;margin-left:8px;'>{sentiment}</span>"
-            )
-        date = r.get("date", "")
-        date_txt = f" · <span style='color:{GREY};font-size:12px;'>{date}</span>" if date else ""
+    st.markdown(f"### 💬 {group} — {len(rows)} commentators")
+    st.markdown(
+        f"<span style='color:{GREY};'>Bubble colour reflects the dominant argument: </span>"
+        f"<span style='background:{arg_colours.get(dom, UNCLASSIFIED_COLOUR)};color:white;"
+        f"padding:2px 10px;border-radius:10px;font-size:13px;'>{dom}</span>",
+        unsafe_allow_html=True,
+    )
 
+    # Order arguments within the group: dominant first, then by count desc.
+    tally = rows["argument"].value_counts()
+    ordered_args = sorted(tally.items(), key=lambda kv: (kv[0] != dom, -kv[1], kv[0]))
+
+    for arg, n in ordered_args:
+        colour = arg_colours.get(arg, UNCLASSIFIED_COLOUR)
+        crown = "  ⭐ dominant" if arg == dom else ""
         st.markdown(
-            f"<div style='border-left:4px solid {NAVY};padding:6px 14px;margin:10px 0;'>"
-            f"<div style='font-weight:600;color:{NAVY_INK};'>{speaker}{badge}{date_txt}</div>"
-            f"<div style='color:{GREY};font-style:italic;margin:6px 0;'>“{r['quote']}”</div>"
-            + (
-                f"<a href='{r['source_link']}' target='_blank' style='color:{TEAL};"
-                f"font-size:13px;text-decoration:none;'>↗ Source</a>"
-                if r.get("source_link")
-                else ""
-            )
-            + "</div>",
+            f"<div style='margin-top:14px;'>"
+            f"<span style='display:inline-block;width:12px;height:12px;border-radius:3px;"
+            f"background:{colour};margin-right:8px;'></span>"
+            f"<span style='font-weight:700;color:{NAVY_INK};'>{arg}</span>"
+            f"<span style='color:{GREY};'> · {n} commentator{'s' if n != 1 else ''}{crown}</span>"
+            f"</div>",
             unsafe_allow_html=True,
+        )
+
+        sub = rows[rows["argument"] == arg].copy()
+        table = pd.DataFrame(
+            {
+                "Commentator": sub["stakeholder_name"].replace({"": "Unattributed"}),
+                "Quote": sub["quote"],
+                "Sentiment": sub["sentiment"].replace({"": "—"}),
+                "Date": sub["date"].replace({"": "—"}),
+                "Source": sub["source_link"].replace({"": None}),
+            }
+        )
+        st.dataframe(
+            table,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Commentator": st.column_config.TextColumn(width="medium"),
+                "Quote": st.column_config.TextColumn(width="large"),
+                "Sentiment": st.column_config.TextColumn(width="small"),
+                "Date": st.column_config.TextColumn(width="small"),
+                "Source": st.column_config.LinkColumn("Source", display_text="↗ open"),
+            },
         )
 
 
@@ -258,16 +296,15 @@ def main() -> None:
 
     st.markdown(
         f"<h1 style='color:{NAVY};margin-bottom:0;'>Stakeholder Dialogue Dashboard</h1>"
-        f"<p style='color:{GREY};margin-top:4px;'>Who is saying what about the research topic — "
-        f"sized by volume of commentary, click a bubble to read the detail.</p>",
+        f"<p style='color:{GREY};margin-top:4px;'>Each bubble is a stakeholder group, coloured by the "
+        f"argument most of its commentators align with. Click a bubble to see who is saying what.</p>",
         unsafe_allow_html=True,
     )
 
-    # --- Sidebar: data source ------------------------------------------------
     with st.sidebar:
         st.header("Data")
         uploaded = st.file_uploader("Upload Bec's data (CSV or Excel)", type=["csv", "xlsx", "xls"])
-        st.caption("Columns: topic, stakeholder_group, stakeholder_name, quote, source_link, date, sentiment")
+        st.caption("Columns: topic, stakeholder_group, stakeholder_name, argument, quote, source_link, date, sentiment")
         with open(SAMPLE_PATH, "rb") as fh:
             st.download_button("⬇ Download data template", fh, "stakeholder_template.csv", "text/csv")
 
@@ -288,7 +325,7 @@ def main() -> None:
             st.error(p)
         st.stop()
 
-    # --- Topic selector ------------------------------------------------------
+    # Topic selector.
     topics = sorted([t for t in df["topic"].unique() if t])
     if len(topics) > 1:
         topic = st.selectbox("Research topic", topics)
@@ -298,42 +335,45 @@ def main() -> None:
     else:
         topic = "Research topic"
 
-    # --- Aggregate counts per group -----------------------------------------
-    counts = (
-        df.groupby("stakeholder_group")
-        .size()
-        .reset_index(name="n")
-        .sort_values("n", ascending=False)
-        .reset_index(drop=True)
-    )
-    counts["colour"] = [colour_for(g, i) for i, g in enumerate(counts["stakeholder_group"])]
+    # Argument colour map (stable across the whole topic).
+    arg_colours = argument_colours(list(df["argument"].unique()))
 
-    # Wrap a long topic label so it fits inside the central node.
+    # Per-group counts + dominant argument + bubble colour.
+    rows = []
+    for group, gdf in df.groupby("stakeholder_group"):
+        dom = dominant_argument(gdf)
+        rows.append(
+            {
+                "stakeholder_group": group,
+                "n": len(gdf),
+                "dominant_arg": dom,
+                "colour": arg_colours.get(dom, UNCLASSIFIED_COLOUR),
+            }
+        )
+    counts = pd.DataFrame(rows).sort_values("n", ascending=False).reset_index(drop=True)
+
     topic_label = topic if len(topic) <= 22 else topic[:22].rsplit(" ", 1)[0] + "…"
 
-    # --- Summary metrics -----------------------------------------------------
+    # Summary metrics.
+    arg_overall = df["argument"].value_counts()
+    top_arg = arg_overall.index[0] if len(arg_overall) else "—"
     m1, m2, m3 = st.columns(3)
-    m1.metric("Total commentaries", int(counts["n"].sum()))
-    m2.metric("Stakeholder groups", len(counts))
-    m3.metric("Most vocal", counts.iloc[0]["stakeholder_group"] if len(counts) else "—")
+    m1.metric("Total commentators", int(counts["n"].sum()))
+    m2.metric("Arguments in play", df["argument"].nunique())
+    m3.metric("Most-cited argument", top_arg)
 
     left, right = st.columns([3, 2], gap="large")
 
-    # --- Bubble diagram + click handling ------------------------------------
     with left:
-        fig = build_figure(counts, topic_label)
+        fig = build_figure(counts, arg_colours, topic_label)
         event = st.plotly_chart(
-            fig,
-            use_container_width=True,
-            on_select="rerun",
-            selection_mode="points",
-            key="network",
+            fig, width="stretch",
+            on_select="rerun", selection_mode="points", key="network",
         )
 
         selected_group = None
         try:
-            pts = event["selection"]["points"]
-            for pt in pts:
+            for pt in event["selection"]["points"]:
                 cd = pt.get("customdata")
                 if isinstance(cd, list):
                     cd = cd[0] if cd else None
@@ -343,18 +383,16 @@ def main() -> None:
         except (KeyError, TypeError):
             selected_group = None
 
-    # --- Detail panel --------------------------------------------------------
     with right:
-        # Selectbox mirrors/serves as a fallback for clicking.
         group_options = ["— select a group —"] + list(counts["stakeholder_group"])
         default_idx = group_options.index(selected_group) if selected_group in group_options else 0
         chosen = st.selectbox("Or pick a stakeholder group", group_options, index=default_idx)
         active = selected_group or (chosen if chosen != "— select a group —" else None)
 
         if active:
-            render_group_detail(df, active)
+            render_group_detail(df, active, arg_colours)
         else:
-            st.info("Click a bubble (or choose a group above) to see the quotes and sources.")
+            st.info("Click a bubble (or choose a group above) to see its commentators grouped by argument.")
 
 
 if __name__ == "__main__":
