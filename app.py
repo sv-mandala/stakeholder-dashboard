@@ -151,10 +151,11 @@ def build_figure(counts: pd.DataFrame, arg_colours: dict[str, str], topic_label:
     n_groups = len(counts)
     radius = 1.0
     max_n = max(int(counts["n"].max()), 1)
-    min_px, max_px = 46, 132
+    min_px = 46
+    span = (132 - min_px) * 1.2  # widen the size spread by 20% for more contrast
 
     def size_px(n: int) -> float:
-        return min_px + (max_px - min_px) * math.sqrt(n / max_n)
+        return min_px + span * math.sqrt(n / max_n)
 
     positions = []
     for i in range(n_groups):
@@ -184,7 +185,10 @@ def build_figure(counts: pd.DataFrame, arg_colours: dict[str, str], topic_label:
                 line=dict(color="white", width=2),
                 opacity=0.95,
             ),
-            text=[f"<b>{g}</b><br>{int(n)}" for g, n in zip(counts["stakeholder_group"], counts["n"])],
+            text=[
+                f"<b>{'<br>'.join(textwrap.wrap(g, width=14))}</b><br>{int(n)}"
+                for g, n in zip(counts["stakeholder_group"], counts["n"])
+            ],
             textposition="middle center",
             textfont=dict(color="white", size=12, family="Arial"),
             customdata=list(counts["stakeholder_group"]),
