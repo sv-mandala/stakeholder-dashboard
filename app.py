@@ -28,38 +28,42 @@ import streamlit as st
 # --------------------------------------------------------------------------- #
 # Palette extracted from mandalapartners.com/reports (navy + coral house style),
 # extended with in-family tints/complements so up to ~8 groups stay distinct.
-NAVY = "#001C55"          # primary deep navy
-NAVY_INK = "#020729"      # near-black navy (text)
-CORAL = "#DA5C5C"         # signature accent
+NAVY = "#0A2A5E"          # deep navy (spokes + central ring)
+NAVY_INK = "#0A1F45"      # near-black navy (text)
+TEAL = "#2E6E8E"          # teal accent (source links)
+AZURE = "#2E86C1"         # bright azure blue
+GREEN = "#2E8B67"         # green accent
+STEEL = "#33567A"         # deep steel blue
 GREY = "#5F5F5F"          # body grey
-LIGHT = "#F5F4F5"         # light background
+LIGHT = "#EDEFF3"         # light background
 
-# Ordered categorical palette for stakeholder bubbles.
+# Ordered categorical palette for stakeholder bubbles (from Mandala theme swatches).
+# Blues, teals and greens only.
 MANDALA_PALETTE = [
-    "#001C55",  # deep navy
-    "#DA5C5C",  # coral
-    "#2A4B9B",  # royal blue (navy tint)
-    "#3E8E7E",  # slate teal
-    "#E3B23C",  # warm gold
-    "#6E8CC4",  # steel blue
-    "#8E5B9F",  # muted plum
-    "#C67B5C",  # terracotta
+    "#0A2A5E",  # deep navy
+    "#2A47A8",  # royal blue
+    "#2E6E8E",  # teal
+    "#2E86C1",  # azure blue
+    "#2E8B67",  # green
+    "#5A7196",  # slate blue
+    "#7E93AD",  # muted slate
+    "#35798F",  # deep teal
 ]
 
 # Stable colour per known group so the palette doesn't shuffle between loads.
 FIXED_GROUP_COLOURS = {
-    "Government": "#001C55",
-    "Media": "#DA5C5C",
-    "Academia": "#2A4B9B",
-    "Public": "#3E8E7E",
-    "Business and peak bodies": "#E3B23C",
-    "Unions": "#6E8CC4",
+    "Government": "#0A2A5E",                 # deep navy
+    "Academia": "#2A47A8",                   # royal blue
+    "Media": "#2E6E8E",                      # teal
+    "Business and peak bodies": "#2E86C1",   # azure blue
+    "Public": "#2E8B67",                     # green
+    "Unions": "#5A7196",                     # slate blue
 }
 
 SENTIMENT_COLOURS = {
-    "positive": "#3E8E7E",
+    "positive": GREEN,
     "neutral": GREY,
-    "negative": CORAL,
+    "negative": STEEL,
 }
 
 REQUIRED_COLUMNS = ["stakeholder_group", "quote"]
@@ -236,7 +240,7 @@ def render_group_detail(df: pd.DataFrame, group: str) -> None:
             f"<div style='font-weight:600;color:{NAVY_INK};'>{speaker}{badge}{date_txt}</div>"
             f"<div style='color:{GREY};font-style:italic;margin:6px 0;'>“{r['quote']}”</div>"
             + (
-                f"<a href='{r['source_link']}' target='_blank' style='color:{CORAL};"
+                f"<a href='{r['source_link']}' target='_blank' style='color:{TEAL};"
                 f"font-size:13px;text-decoration:none;'>↗ Source</a>"
                 if r.get("source_link")
                 else ""
