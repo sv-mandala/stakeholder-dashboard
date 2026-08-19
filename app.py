@@ -19,6 +19,7 @@ Data schema:   see data/sample_data.csv and README.md
 from __future__ import annotations
 
 import math
+import textwrap
 from pathlib import Path
 
 import pandas as pd
@@ -196,9 +197,9 @@ def build_figure(counts: pd.DataFrame, arg_colours: dict[str, str], topic_label:
     fig.add_trace(
         go.Scatter(
             x=[0], y=[0], mode="markers+text",
-            marker=dict(size=150, color="white", line=dict(color=NAVY, width=3)),
+            marker=dict(size=180, color="white", line=dict(color=NAVY, width=3)),
             text=[f"<b>{topic_label}</b>"], textposition="middle center",
-            textfont=dict(color=NAVY_INK, size=13, family="Arial"),
+            textfont=dict(color=NAVY_INK, size=11, family="Arial"),
             hoverinfo="skip", showlegend=False,
         )
     )
@@ -296,7 +297,8 @@ def main() -> None:
 
     st.markdown(
         f"<h1 style='color:{NAVY};margin-bottom:0;'>Stakeholder Dialogue Dashboard</h1>"
-        f"<p style='color:{GREY};margin-top:4px;'>Each bubble is a stakeholder group, coloured by the "
+        f"<p style='color:{GREY};margin-top:4px;'>What are opinion-formers saying about fixed, "
+        f"four-year federal terms in Australia? Each bubble is a stakeholder group, coloured by the "
         f"argument most of its commentators align with. Click a bubble to see who is saying what.</p>",
         unsafe_allow_html=True,
     )
@@ -352,7 +354,8 @@ def main() -> None:
         )
     counts = pd.DataFrame(rows).sort_values("n", ascending=False).reset_index(drop=True)
 
-    topic_label = topic if len(topic) <= 22 else topic[:22].rsplit(" ", 1)[0] + "…"
+    central_question = "What are opinion-formers saying about fixed, four-year federal terms in Australia?"
+    topic_label = "<br>".join(textwrap.wrap(central_question, width=16))
 
     # Summary metrics.
     arg_overall = df["argument"].value_counts()
