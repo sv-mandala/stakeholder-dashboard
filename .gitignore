@@ -1,0 +1,19 @@
+# Python virtual environment (do NOT upload — it's large and machine-specific)
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Streamlit local secrets (if you add any later)
+.streamlit/secrets.toml
